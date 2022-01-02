@@ -1,331 +1,223 @@
 /*
-* 
-* Ryan Montminy
-* COSC 3P98 - Assignment 1 - Part 2
-* 
-* Screensaver to the likeness of the old DVD player animation.
-* Bounces perfectly off the sides.
-* 
-* Features:
-* - Fix color to R, G, or B.
-* - Change shape from text, triangle square.
-* - Speed up or slow down.
-* - Changes color every bounce, if fixed not selected.
-* - Quit screensaver.
-* - Reset to default settings.
-* 
-*/
+ * Ryan Montminy - 6171235
+ * Andrew Kornelsen - 6401145
+ * COSC 3P98 - Final Project
+ *
+ *
+ *
+ * Features:
+ * - 
+ *
+ */
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 #include <malloc.h>
 #include <freeglut.h>
 #include <FreeImage.h>
-#include <iostream>
 #include <vector>
-#include <windows.h>
-#include <GL/gl.h>
-#include <string>
+#include <time.h>
+
+ /* Custom structures */
+
+//The pixel structure
+typedef struct {
+	GLubyte r, g, b;
+} pixel;
+
+//The global structure
+typedef struct {
+	pixel* data;
+	int w, h, rotateSpeed, randMaxDir;
+	bool  enableSpeedMod, enableFrictionMod, enableSprayMode;
+	float camx, camy, camz;
+} glob;
 
 
-int speed = 2;
-int tX = speed, tY = speed;
-int posXOne = 225, posXTwo = 275, posYOne = 300, posYTwo = 350; //Curr Pos of the object
+
+/* Global Variables */
+int camDist = 0; // Move camera forward/backward (W / S)
+int camX = 0; // 
+int camY = 0;
+int camAngleX = 0; // Camera angle rotating around X
+int camAngleY = 0;// Camera angle rotating around Y
+
+float speed = 0.5;
+float tX = speed, tY = speed;
+float posX, posY;
 int color[3] = { 255,0,0 }; //Color of the object
-int height = 400, width = 500; //Size of canvas
+int height = 45, width = 55; //Size of canvas
 bool fixed = false; //Wether we are using a fixed color
 int shape = 0; //Which shape we are currently using, defaults to "DVD" text
 
-enum {
-    MENU_QUIT, MENU_RESET, MENU_SDOWN, MENU_SUP, MENU_FRED, MENU_FGREEN, MENU_FBLUE, MENU_DEFAULT, MENU_TRIANGLE, MENU_SQUARE
-};
+glob global; // Global
+enum { MENU_QUIT }; // Menu options
 
 
-// Renders a string on the glut display
-// https://www.opengl.org/resources/libraries/glut/spec3/node76.html
-void displayText(float x, float y, void* font, const char* string) {
-    glRasterPos2f(x, y);
-    for (int i = 0; i < strlen(string); i++) {
-        glutBitmapCharacter(font, string[i]);
-    }
+
+/* Time progression */
+void timer(int extra) {
+	glutPostRedisplay();
+	glutTimerFunc(10, timer, 0);
 }
 
-// Renders default image, and logic for screensaver movement.
+
+/* Disbale all objects and environment to display */
 void display(void) {
+	int p[][3] = { {6,6,6}, {6,-6,6}, {-6,-6,6}, {-6,6,6},
+			   {6,6,-6}, {6,-6,-6}, {-6,-6,-6}, {-6,6,-6} };
 
-    glClear(GL_COLOR_BUFFER_BIT);
-    glColor3f(color[0], color[1], color[2]);
+	int e[][4] = { {0,3,2,1},{3,7,6,2},{7,4,5,6},{4,0,1,5}, {0,4,7,3},{1,2,6,5} };
+	float c[][3] = { {1.0,0,0},{0,1.0,0},{1.0,1.0,1.0},
+		   {0,0,1.0},{.6,0,.6},{0,.6,.6} };
+	int i;
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
 
-    // Decide how we are moving the object. Only changes if a side is hit.
-    if (shape == 0) {
-        // Left bounce
-        if (posXOne <= 0) {
-            tX = speed;
-            if (!fixed) {
-                color[0] = 0, color[1] = 255, color[2] = 0;
-            }
-        }
-        // Right bounce
-        if (posXOne +10>= width) {
-            tX = -speed;
-            if (!fixed) {
-                color[0] = 0, color[1] = 0, color[2] = 255;
-            }
-        }
-        // Bottom bounce
-        if (posYOne - 10 <= 0) {
-            tY = speed;
-            if (!fixed) {
-                color[0] = 255, color[1] = 255, color[2] = 0;
-            }
-        }
-        // Top bounce
-        if (posYOne + 10 >= height) {
-            tY = -speed;
-            if (!fixed) {
-                color[0] = 0, color[1] = 255, color[2] = 255;
-            }
-        }
-    }
-    else {
-        // Left bounce
-        if (posXOne <= 0 || posXTwo <= 0) {
-            tX = speed;
-            if (!fixed) {
-                color[0] = 0, color[1] = 255, color[2] = 0;
-            }
-        }
-        // Right bounce
-        if (posXOne >= width || posXTwo >= width) {
-            tX = -speed;
-            if (!fixed) {
-                color[0] = 0, color[1] = 0, color[2] = 255;
-            }
-        }
-        // Bottom Bounce
-        if (posYOne <= 0 || posYTwo <= 0) {
-            tY = speed;
-            if (!fixed) {
-                color[0] = 255, color[1] = 255, color[2] = 0;
-            }
-        }
-        // Top Bounce
-        if (posYOne >= height || posYTwo >= height) {
-            tY = -speed;
-            if (!fixed) {
-                color[0] = 0, color[1] = 255, color[2] = 255;
-            }
-        }
-    }
-    // Move object
-    posXOne += tX;
-    posXTwo += tX;
-    posYOne += tY;
-    posYTwo += tY;
+	gluPerspective(80, (float)(global.w / global.h), 0.5, 200);
+	gluLookAt(global.camx, global.camy, global.camz, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 
-    if (shape == 0) displayText(posXOne, posYOne, (void*)GLUT_BITMAP_TIMES_ROMAN_24, "DVD"); // DVD text
-    if (shape == 1) { //Triangle
-        glBegin(GL_TRIANGLES);
-            glVertex2f(posXOne, posYOne);
-            glVertex2f(posXTwo, posYOne);
-            glVertex2f(posXOne, posYTwo);
-        glEnd();
-    }
-    if (shape == 2) { //Square
-        glBegin(GL_QUADS);
-            glVertex2f(posXOne, posYTwo);
-            glVertex2f(posXTwo, posYTwo);
-            glVertex2f(posXTwo, posYOne);
-            glVertex2f(posXOne, posYOne);
-        glEnd();
-    }
-    glFlush();
-    glutPostRedisplay();
-    glutSwapBuffers();
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+
+	//Camera movement
+	glTranslatef(camDist, 0, camDist);
+	glRotatef(camAngleY, 1, 0, 0);
+	glRotatef(camAngleX, 0, 1, 0);
+
+	
+
+	// Decide how we are moving the object. Only changes if a side is hit.
+	// Left bounce
+	if (posX <= -width) tX = speed;
+	// Right bounce
+	if (posX >= width) tX = -speed;
+	// Bottom Bounce
+	if (posY <= -height) tY = speed;
+	// Top Bounce
+	if (posY >= height)tY = -speed;
+	// Move object
+	posX += tX;
+	posY += tY;
+	
+	glPushMatrix();
+	glTranslatef(posX, posY, 0);
+	glRotatef(posY, 1, 0, 0);
+	glRotatef(posX, 0, 1, 0);
+	glRotatef(posY, 1, 0, 0);
+	glRotatef(posX, 0, 0, 1);
+	for (i = 0; i < 6; ++i) {
+		glColor3fv(c[i]);
+		glBegin(GL_QUADS);
+		glVertex3iv(p[e[i][0]]);
+		glVertex3iv(p[e[i][1]]);
+		glVertex3iv(p[e[i][2]]);
+		glVertex3iv(p[e[i][3]]);
+		glEnd();
+	}
+	glPopMatrix();
+
+	glutSwapBuffers();
+	glFlush();
 }
 
-void keyboard(unsigned char key, int x, int y) {
 
-    switch (key) {
-    case 'n': //Reset
-    case 'N':
-        color[0] = 255, color[1] = 0, color[2] = 0;
-        fixed = false;
-        speed = 2;
-        tX = speed, tY = speed;
-        posXOne = 225, posXTwo = 275, posYOne = 300, posYTwo = 350;
-        shape = 0;
-        glutPostRedisplay();
-        break;
-    case '-': //Slow down
-        if (tX < 0) {
-            tX = tX + 1;
-            tY = tY + 1;
-            speed -= 1;
-        }
-        if (tX > 0) {
-            tX = tX - 1;
-            tY = tY - 1;
-            speed -= 1;
-        }
-        break;
+/* Moving camera using mouse. Only while mouse left click down */
+void cameraMotion(int x, int y) {
+	if (camX == 0) camX = x; //Set initial x
+	if (camY == 0) camY = y; //Set initial y
+	int diffX = camX - x; //x increment/decrement
+	int diffY = camY - y; //y increment/decrement
+	if (camAngleX < 360) camAngleX -= diffX; //Subtract for inverted movement
+	else camAngleX = 0;
+	if (camAngleY < 360) camAngleY -= diffY; //Subtract for inverted movement
+	else camAngleY = 0;
 
-    case '+': //Speed up
-        if (tX < 0) {
-            tX = tX - 1;
-            tY = tY - 1;
-            speed += 1;
-        }
-        if (tX >= 0) {
-            tX = tX + 1;
-            tY = tY + 1;
-            speed += 1;
-        }
-        break;
-    case 'r': //Red
-    case 'R':
-        fixed = true;
-        color[0] = 255, color[1] = 0, color[2] = 0;
-        break;
-    case 'g': //Green
-    case 'G':
-        fixed = true;
-        color[0] = 0, color[1] = 255, color[2] = 0;
-        break;
-    case 'b': //Blue
-    case 'B':
-        fixed = true;
-        color[0] = 0, color[1] = 0, color[2] = 255;
-        break;
-    case 0x1B: //Quit
-    case 'q':
-    case 'Q':
-        exit(0);
-        break;
-    case 'd': //Default shape
-    case 'D':
-        shape = 0;
-        break;
-    case 't': //Triangle
-    case 'T':
-        shape = 1;
-        break;
-    case 'x': //Square
-    case 'X':
-        shape = 2;
-        break;
-    }
+	//Update x and y
+	camX = x;
+	camY = y;
 }
 
-void show_keys()
-{
-    printf("Q: Quit\nN: Reset\n+: Speed Up\n-: Slow Down\nR: Static Red Color\nG: Static Green Color\nB: Static Blue Color\nD: Default Shape\nT: Triangle Shape\nX: Square Shape");
+
+/* Key bendings to print */
+void show_keys() {
+	printf("Q:Quit\nU:Unique Particles\nW:Forward\nS:Backward\nA:Rotate Left\nD:Rotate Right\nF:Shoot\nT:Increase Rotation Speed\nY:Decrese Rotation Speed\nZ:Toggle Speed Modifer\nC:Toggle Friction Mode\nX:Toggle Spray Mode\nR:Reset\n");
 }
 
-void menuFunc(int value)
-{
-    switch (value) {
-    case MENU_QUIT:
-        exit(0);
-        break;
-    case MENU_RESET:
-        color[0] = 255, color[1] = 0, color[2] = 0;
-        fixed = false;
-        speed = 2;
-        tX = speed, tY = speed;
-        posXOne = 225, posXTwo = 275, posYOne = 300, posYTwo = 350;
-        shape = 0;
-        glutPostRedisplay();
-        break;
-    case MENU_SUP:
-        if (tX < 0) {
-            tX = tX - 1;
-            tY = tY - 1;
-            speed += 1;
-        }
-        if (tX >= 0) {
-            tX = tX + 1;
-            tY = tY + 1;
-            speed += 1;
-        }
-        break;
-    case MENU_SDOWN:
-        if (tX < 0) {
-            tX = tX + 1;
-            tY = tY + 1;
-            speed -= 1;
-        }
-        if (tX > 0) {
-            tX = tX - 1;
-            tY = tY - 1;
-            speed -= 1;
-        }
-        break;
-    case MENU_FRED:
-        fixed = true;
-        color[0] = 255, color[1] = 0, color[2] = 0;
-        break;
-    case MENU_FGREEN:
-        fixed = true;
-        color[0] = 0, color[1] = 255, color[2] = 0;
-        break;
-    case MENU_FBLUE:
-        fixed = true;
-        color[0] = 0, color[1] = 0, color[2] = 255;
-        break;
-    case MENU_DEFAULT:
-        shape = 0;
-        break;
-    case MENU_TRIANGLE:
-        shape = 1;
-        break;
-    case MENU_SQUARE:
-        shape = 2;
-        break;
-    }
+
+//Glut menu callback function
+void menuFunc(int value) {
+	switch (value) {
+	case MENU_QUIT:
+		exit(0);
+		break;
+	}
 }//menuFunc
 
-void init_menu()
-{
-    int speed_menu = glutCreateMenu(&menuFunc);
-    glutAddMenuEntry("Speed Up", MENU_SUP);
-    glutAddMenuEntry("Slow Down", MENU_SDOWN);
 
-    int fcolor_menu = glutCreateMenu(&menuFunc);
-    glutAddMenuEntry("Fixed Red", MENU_FRED);
-    glutAddMenuEntry("Fixed Green", MENU_FGREEN);
-    glutAddMenuEntry("Fixed Blue", MENU_FBLUE);
-
-    int fshape_menu = glutCreateMenu(&menuFunc);
-    glutAddMenuEntry("Default", MENU_DEFAULT);
-    glutAddMenuEntry("Triangle", MENU_TRIANGLE);
-    glutAddMenuEntry("Square", MENU_SQUARE);
-
-    int main_menu = glutCreateMenu(&menuFunc);
-    glutAddSubMenu("Change Speed", speed_menu);
-    glutAddSubMenu("Change Shape", fshape_menu);
-    glutAddSubMenu("Fixed Color", fcolor_menu);
-    glutAddMenuEntry("Reset", MENU_RESET);
-    glutAddMenuEntry("Quit", MENU_QUIT);
-    glutAttachMenu(GLUT_RIGHT_BUTTON);
+//Glut menu options
+void init_menu() {
+	int main_menu = glutCreateMenu(&menuFunc);
+	glutAddMenuEntry("Quit", MENU_QUIT);
+	glutAttachMenu(GLUT_RIGHT_BUTTON);
 }
 
+
+
+/* Intialize Program */
 int main(int argc, char** argv) {
-    glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
-    glutInitWindowSize(width, height);
-    glutCreateWindow("Screensaver");
+	time_t t;
+	srand((unsigned)time(&t));
+	//Initial Window 
+	global.w = 720;
+	global.h = 720;
+	global.camx = 0.0;
+	global.camy = 0.0;
+	global.camz = 70.0;
+	global.rotateSpeed = 1;
+	global.enableFrictionMod = false;
+	global.enableSpeedMod = false;
+	global.randMaxDir = 5;
+	global.data = (pixel*)malloc(global.w * global.h * sizeof(pixel));
 
-    glutDisplayFunc(display);
-    glutKeyboardFunc(keyboard);
-    glutIdleFunc(display);
+	// Fill the initial window
+	for (int i = 0; i < global.w * global.h; i++) {
+		global.data[i].r = 0;
+		global.data[i].g = 0;
+		global.data[i].b = 0;
+	}
 
-    glClearColor(0.0, 0.0, 0.0, 1.0);
-    glOrtho(0.0, width, 0.0, height, -1.0, 1.0);
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 
-    init_menu();
-    show_keys();
+	glutInitWindowSize(global.w, global.h);
+	glutCreateWindow("Particle Cannon"); //Window title
 
-    glutFullScreen();
-    glutMainLoop();
+	//Lighting and Effects
+	//glEnable(GL_DEPTH_TEST);
+	//glEnable(GL_LIGHTING);
+	//glEnable(GL_LIGHT0);
+	glEnable(GL_COLOR_MATERIAL);
+	glEnable(GL_STENCIL_TEST);
+	glEnable(GL_CULL_FACE);
+	glEnable(GL_ALPHA_TEST);
+	glEnable(GL_BLEND);
+	glCullFace(GL_BACK);
+	glFrontFace(GL_CCW);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glClearColor(0, 0, 0, 1); // Set background to white
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	//glutKeyboardFunc(keyboard); //Keyboard bindings
+	glutMotionFunc(cameraMotion); //Camera movement
+	glutDisplayFunc(display); //Display
+	glutTimerFunc(0, timer, 0); //Time
+
+	init_menu();
+	show_keys(); //Print key binds to console
+	glutMainLoop(); //Loop
+
+	return 0; //Exit
 }
